@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30717.126
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VISCA.NET", "VISCA.NET\VISCA.NET.csproj", "{165F4C36-A610-4CEF-BA94-1CCD22084239}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sandbox", "Sandbox\Sandbox.csproj", "{FEFE37C3-9433-4BA5-9060-9156FC1738A4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{165F4C36-A610-4CEF-BA94-1CCD22084239}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{165F4C36-A610-4CEF-BA94-1CCD22084239}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{165F4C36-A610-4CEF-BA94-1CCD22084239}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{165F4C36-A610-4CEF-BA94-1CCD22084239}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FEFE37C3-9433-4BA5-9060-9156FC1738A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FEFE37C3-9433-4BA5-9060-9156FC1738A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FEFE37C3-9433-4BA5-9060-9156FC1738A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FEFE37C3-9433-4BA5-9060-9156FC1738A4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C31D8BAA-D5F4-4C20-9A3C-E925623DC13C}
+	EndGlobalSection
+EndGlobal
