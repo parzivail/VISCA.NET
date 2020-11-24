@@ -1,6 +1,6 @@
 ﻿namespace VISCA.NET
 {
-    public enum ViscaIrisFNumber : byte
+    public enum ViscaApertureFNumber : byte
     {
         F1_4 = 0x11,
         F1_6 = 0x10,
