@@ -6,6 +6,8 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using VISCA.NET.Extensions;
+using VISCA.NET.Inquiry;
+using VISCA.NET.Inquiry.Enums;
 
 namespace VISCA.NET
 {
@@ -48,7 +50,7 @@ namespace VISCA.NET
             Console.WriteLine($"← {GetHexString(packet)}");
             _port.Write(packet, 0, packet.Length);
         }
-
+        
         private async Task<ViscaInquiryResponse> GetInquiryResponse(int responseLength)
         {
             var buffer = await _port.ReadAsync(responseLength + 3);
@@ -87,10 +89,19 @@ namespace VISCA.NET
             return (short)(((((data.Payload[offset + 0] & 0x0F) << 4) | (data.Payload[offset + 1] & 0x0F)) << 8) | ((data.Payload[offset + 2] & 0x0F) << 4) | (data.Payload[offset + 3] & 0x0F));
         }
 
+        private static short GetExpandedInt12(ViscaInquiryResponse data, int offset = 0)
+        {
+            if (data.Payload.Length < 3)
+                throw new ArgumentException("Expanded int12s can only be read from at least 3-byte payloads", nameof(data));
+
+            // 0x0A 0x0B 0x0C 0x0D => 0xABCD
+            return (short)(((data.Payload[offset + 0] & 0x0F) << 8) | ((data.Payload[offset + 1] & 0x0F) << 4) | (data.Payload[offset + 2] & 0x0F));
+        }
+
         private static short GetShort(ViscaInquiryResponse data, int offset = 0)
         {
             if (data.Payload.Length < 2)
-                throw new ArgumentException("Expanded shorts can only be read from at least 2-byte payloads", nameof(data));
+                throw new ArgumentException("Shorts can only be read from at least 2-byte payloads", nameof(data));
 
             // 0xAB 0xCD => 0xABCD
             return BitConverter.ToInt16(data.Payload, offset);
@@ -104,6 +115,8 @@ namespace VISCA.NET
             // 0x0A 0x0B => 0xAB
             return (byte)(((data.Payload[offset + 2] & 0x0F) << 4) | (data.Payload[offset + 3] & 0x0F));
         }
+
+        #region Inquiry
 
         public async Task<bool> GetPower(byte address)
         {
@@ -416,7 +429,7 @@ namespace VISCA.NET
 
         public async Task<(short ModelCode, short RomVersion, byte SocketNumber)> GetVersion(byte address)
         {
-            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, (byte)ViscaInquiryCameraOpcode.ID));
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.Interface, (byte)ViscaInquiryInterfaceOpcode.Version));
             var data = await GetInquiryResponse(7);
             return (ModelCode: GetShort(data, 2), RomVersion: GetShort(data, 4), SocketNumber: data.Payload[6]);
         }
@@ -428,12 +441,60 @@ namespace VISCA.NET
             
             return GetBoolean(data, 0x02, 0x03);
         }
-    }
 
-    public enum ViscaPictureEffectMode
-    {
-        Off = 0x00,
-        NegativeArt = 0x02,
-        BlackAndWhite = 0x04
+        public async Task<byte> GetAlarmMode(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, (byte)ViscaInquiryCameraOpcode.AlarmMode));
+            var data = await GetInquiryResponse(1);
+            
+            return data.Payload[0];
+        }
+
+        public async Task<(short DayAELevel, short NightAELevel, short NowAELevel)> GetAlarmDayNightLevel(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, (byte)ViscaInquiryCameraOpcode.AlarmDayNightLevel));
+            var data = await GetInquiryResponse(9);
+            
+            return (DayAELevel: GetExpandedInt12(data), NightAELevel: GetExpandedInt12(data, 3), NowAELevel: GetExpandedInt12(data, 6));
+        }
+
+        public async Task<bool> GetPictureFlipMode(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, (byte)ViscaInquiryCameraOpcode.PictureFlipMode));
+            var data = await GetInquiryResponse(1);
+            
+            return GetBoolean(data, 0x02, 0x03);
+        }
+        
+        public async Task<ViscaAlarmDetectLevel> GetAlarmDetectLevel(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, (byte)ViscaInquiryCameraOpcode.AlarmDetectLevel));
+            var data = await GetInquiryResponse(1);
+
+            return GetEnum<ViscaAlarmDetectLevel>(data);
+        }
+
+        public async Task<short> GetPanTiltMode(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.PanTilter, (byte)ViscaInquiryPanTilterOpcode.Mode));
+            var data = await GetInquiryResponse(2);
+            return GetShort(data);
+        }
+
+        public async Task<(byte Pan, byte Tilt)> GetPanTiltMaxSpeed(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.PanTilter, (byte)ViscaInquiryPanTilterOpcode.MaxSpeed));
+            var data = await GetInquiryResponse(2);
+            return (Pan: data.Payload[0], Tilt: data.Payload[1]);
+        }
+
+        public async Task<(short Pan, short Tilt)> GetPanTiltPosition(byte address)
+        {
+            Send(GetPacket(address, ViscaPacketType.Inquiry, ViscaPacketCategory.PanTilter, (byte)ViscaInquiryPanTilterOpcode.Pos));
+            var data = await GetInquiryResponse(8);
+            return (Pan: GetExpandedShort(data), Tilt: GetExpandedShort(data, 4));
+        }
+        
+        #endregion
     }
 }

@@ -1,4 +1,4 @@
-﻿namespace VISCA.NET
+﻿namespace VISCA.NET.Inquiry.Enums
 {
     public enum ViscaAutoFocusSensitivity : byte
     {

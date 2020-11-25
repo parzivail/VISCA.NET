@@ -1,9 +1,9 @@
-﻿namespace VISCA.NET
+﻿namespace VISCA.NET.Inquiry
 {
     public class ViscaInquiryResponse
     {
-        public byte CommandSocket { get; set; }
-        public byte[] Payload { get; set; }
+        public readonly byte CommandSocket;
+        public readonly byte[] Payload;
         
         public ViscaInquiryResponse(byte commandSocket, byte[] payload)
         {
