@@ -14,8 +14,10 @@ namespace Sandbox
 		{
 			var port = SelectComPort();
 			var con = new ViscaConnection(port, ViscaBaudRate.Rate38400);
+			
+			var device = new ViscaDevice(1);
 
-			var (pan, tilt) = await con.GetPanTiltPosition(1);
+			var (pan, tilt) = await con.GetPanTiltPosition(device);
 			Console.WriteLine($"Pan: {pan}, Tilt: {tilt}");
 			
 			var mres = new ManualResetEventSlim();
