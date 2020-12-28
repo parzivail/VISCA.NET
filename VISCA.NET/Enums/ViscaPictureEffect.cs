@@ -1,6 +1,6 @@
-﻿namespace VISCA.NET.Inquiry.Enums
+﻿namespace VISCA.NET.Enums
 {
-    public enum ViscaPictureEffectMode
+    public enum ViscaPictureEffect
     {
         Off = 0x00,
         NegativeArt = 0x02,

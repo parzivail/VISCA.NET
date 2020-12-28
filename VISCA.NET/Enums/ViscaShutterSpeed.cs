@@ -1,4 +1,4 @@
-﻿namespace VISCA.NET.Inquiry.Enums
+﻿namespace VISCA.NET.Enums
 {
     public enum ViscaShutterSpeed : byte
     {

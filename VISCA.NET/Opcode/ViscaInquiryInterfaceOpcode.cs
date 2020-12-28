@@ -1,4 +1,4 @@
-﻿namespace VISCA.NET.Inquiry
+﻿namespace VISCA.NET.Opcode
 {
     public enum ViscaInquiryInterfaceOpcode : byte
     {

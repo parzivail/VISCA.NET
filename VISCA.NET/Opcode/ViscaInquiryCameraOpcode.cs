@@ -1,4 +1,4 @@
-﻿namespace VISCA.NET.Inquiry
+﻿namespace VISCA.NET.Opcode
 {
     public enum ViscaInquiryCameraOpcode : byte
     {
@@ -36,7 +36,7 @@
         ICRMode = 0x01,
         AutoICRMode = 0x51,
         Memory = 0x3F,
-        DisplayMode = 0x15, // ***
+        DisplayMode = 0x15,
         TitleDisplayMode = 0x74,
         MuteMode = 0x75,
         KeyLock = 0x17,

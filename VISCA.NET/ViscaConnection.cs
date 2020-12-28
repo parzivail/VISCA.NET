@@ -4,63 +4,14 @@ using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Threading.Tasks;
+using VISCA.NET.Enums;
 using VISCA.NET.Extensions;
-using VISCA.NET.Inquiry;
-using VISCA.NET.Inquiry.Enums;
+using VISCA.NET.Opcode;
 
 namespace VISCA.NET
 {
-    public class ViscaDevice
-    {
-        public byte Address { get; }
-        public readonly Queue<ViscaPacket> CommandBuffer;
-        
-        public bool HasOpenSocket => !_sockets[0] || !_sockets[1];
-        
-        private readonly bool[] _sockets;
-
-        public ViscaDevice(byte address)
-        {
-            Address = address;
-            
-            CommandBuffer = new Queue<ViscaPacket>();
-            _sockets = new bool[2];
-        }
-
-        public void SetSocket(int socketNumber)
-        {
-            _sockets[socketNumber] = true;
-        }
-
-        public void ClearSocket(int socketNumber)
-        {
-            _sockets[socketNumber] = false;
-        }
-    }
-
-    public class ViscaPacket
-    {
-        public ViscaDevice Device { get; }
-        public readonly byte[] Data;
-
-        public ViscaPacket(ViscaDevice device, byte[] data)
-        {
-            Device = device;
-            Data = data;
-        }
-    }
-
-    public enum ViscaAckStatus
-    {
-        Success = 0x00,
-        SyntaxError = 0x02,
-        CommandBufferFull = 0x03,
-        CommandCancelled = 0x04,
-        NoSocket = 0x05,
-        CommandNotExecutable = 0x41
-    }
-    
     public class ViscaConnection
     {
         private readonly SerialPort _port;
@@ -183,6 +134,21 @@ namespace VISCA.NET
             };
         }
 
+        private static byte[] PackDoubleExpandedShort(short valA, short valB)
+        {
+            return new []
+            {
+                (byte)(((valA & 0xF000) >> 12) & 0x0F),
+                (byte)(((valA & 0xF00) >> 8) & 0x0F),
+                (byte)(((valA & 0xF0) >> 4) & 0x0F),
+                (byte)(valA & 0xF),
+                (byte)(((valB & 0xF000) >> 12) & 0x0F),
+                (byte)(((valB & 0xF00) >> 8) & 0x0F),
+                (byte)(((valB & 0xF0) >> 4) & 0x0F),
+                (byte)(valB & 0xF)
+            };
+        }
+
         private static short UnpackExpandedShort(ViscaInquiryResponse data, int offset = 0)
         {
             if (data.Payload.Length < 4)
@@ -202,6 +168,19 @@ namespace VISCA.NET
             };
         }
 
+        private static byte[] PackDoubleExpandedInt12(short valA, short valB)
+        {
+            return new []
+            {
+                (byte)(((valA & 0xF00) >> 8) & 0x0F),
+                (byte)(((valA & 0xF0) >> 4) & 0x0F),
+                (byte)(valA & 0xF),
+                (byte)(((valB & 0xF00) >> 8) & 0x0F),
+                (byte)(((valB & 0xF0) >> 4) & 0x0F),
+                (byte)(valB & 0xF)
+            };
+        }
+
         private static short UnpackExpandedInt12(ViscaInquiryResponse data, int offset = 0)
         {
             if (data.Payload.Length < 3)
@@ -217,6 +196,17 @@ namespace VISCA.NET
             {
                 (byte)(((val & 0xF0) >> 4) & 0x0F),
                 (byte)(val & 0xF)
+            };
+        }
+
+        private static byte[] PackDoubleExpandedByte(byte valA, byte valB)
+        {
+            return new []
+            {
+                (byte)(((valA & 0xF0) >> 4) & 0x0F),
+                (byte)(valA & 0xF),
+                (byte)(((valB & 0xF0) >> 4) & 0x0F),
+                (byte)(valB & 0xF)
             };
         }
 
@@ -266,6 +256,7 @@ namespace VISCA.NET
         
         public async Task<ViscaAckStatus> SetZoom(ViscaDevice device, ViscaZoomVariable zoom, byte zoomLevel)
         {
+            // Level is valid from 0-7
             var level = zoomLevel & 0b111;
             Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Zoom, (byte)(((byte)zoom & 0xF0) | level)));
             return await GetCommandAck();
@@ -274,6 +265,452 @@ namespace VISCA.NET
         public async Task<ViscaAckStatus> SetZoomDirect(ViscaDevice device, short zoom)
         {
             Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ZoomDirect, PackExpandedShort(zoom)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetDigitalZoom(ViscaDevice device, ViscaDigitalZoomStandard zoom)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.DigitalZoom, (byte)zoom));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetDigitalZoom(ViscaDevice device, ViscaZoomVariable zoom, byte zoomLevel)
+        {
+            // Level is valid from 0-7
+            var level = zoomLevel & 0b111;
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.DigitalZoom, (byte)(((byte)zoom & 0xF0) | level)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetDigitalZoomMode(ViscaDevice device, ViscaDigitalZoomMode mode)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.DigitalZoomMode, (byte)mode));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetDigitalZoomDirect(ViscaDevice device, byte zoom)
+        {
+            // Payload is [00 00 0p 0q] instead of [0p 0q 0r 0s]
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.DigitalZoomDirect, PackExpandedShort(zoom)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetFocus(ViscaDevice device, ViscaFocusStandard focus)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Focus, (byte)focus));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetFocus(ViscaDevice device, ViscaFocusVariable focus, byte focusLevel)
+        {
+            // Level is valid from 0-7
+            var level = focusLevel & 0b111;
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Focus, (byte)(((byte)focus & 0xF0) | level)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetFocusDirect(ViscaDevice device, short focus)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.FocusDirect, PackExpandedShort(focus)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAutoFocus(ViscaDevice device, ViscaAutoFocusMode focus)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoFocus, (byte)focus));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetFocusSpecial(ViscaDevice device, ViscaFocusSpecial focus)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.FocusSpecial, (byte)focus));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetFocusNearLimit(ViscaDevice device, short focus)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.FocusNearLimit, PackExpandedShort(focus)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAutoFocusSensitivity(ViscaDevice device, ViscaAutoFocusSensitivity value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoFocusSensitivity, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAutoFocusMode(ViscaDevice device, ViscaAutoFocusMode value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoFocusMode, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAutoFocusActiveIntervalTime(ViscaDevice device, byte movementTime, byte interval)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoFocusActiveIntervalTime, PackDoubleExpandedByte(movementTime, interval)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetZoomFocus(ViscaDevice device, short zoom, short focus)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoFocusActiveIntervalTime, PackDoubleExpandedShort(zoom, focus)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> TriggerInitialize(ViscaDevice device, ViscaInitializeTarget value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Initialize, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetWhiteBalance(ViscaDevice device, ViscaWhiteBalanceMode value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.WhiteBalance, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> TriggerWhiteBalance(ViscaDevice device)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.WhiteBalanceTrigger, 0x05));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetRGain(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.RGain, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetRGain(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.RGainDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetBGain(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.BGain, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetBGain(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.BGainDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAutoExposure(ViscaDevice device, ViscaAutoExposureMode value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoExposure, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetSlowShutter(ViscaDevice device, ViscaSlowShutterMode value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.SlowShutter, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetShutter(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Shutter, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetShutter(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ShutterDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetIris(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Iris, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetIris(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.IrisDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetGain(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Gain, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetGain(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.GainDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetBright(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Bright, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetBright(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.BrightDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetExposureCompensation(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ExposureCompensationEnable, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetExposureCompensation(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ExposureCompensation, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetExposureCompensation(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ExposureCompensationDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetBacklight(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Backlight, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetSpotAutoExposure(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.SpotAutoExposure, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetSpotAutoExposurePosition(ViscaDevice device, byte x, byte y)
+        {
+            x &= 0x0F;
+            y &= 0x0F;
+            
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.SpotAutoExposurePosition, PackDoubleExpandedByte(x, y)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAperture(ViscaDevice device, ViscaDeltaState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Aperture, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAperture(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ApertureDirect, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetLRReverse(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.LRReverse, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetFreeze(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Freeze, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetPictureEffect(ViscaDevice device, ViscaPictureEffect value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.PictureEffect, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetICR(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.ICR, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAutoICR(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AutoICR, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetMemory(ViscaDevice device, ViscaMemoryCommand command, byte memoryNumber)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Memory, (byte)command, (byte)memoryNumber));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetDisplay(ViscaDevice device, ViscaBinaryStateToggle value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Display, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetTitleParams(ViscaDevice device, byte x, byte y, ViscaTitleColor color, ViscaTitleBlink blink)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.TitleSet, 0x00, y, x, (byte)color, (byte)blink, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetTitleTextA(ViscaDevice device, string str)
+        {
+            str = str.Substring(0, Math.Min(str.Length, 10));
+            var bytes = Encoding.ASCII.GetBytes(str);
+            var payload = new byte[11];
+            payload[0] = 0x01;
+            Array.Copy(bytes, 0, payload, 1, bytes.Length);
+            
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.TitleSet, payload));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetTitleTextB(ViscaDevice device, string str)
+        {
+            str = str.Substring(0, Math.Min(str.Length, 10));
+            var bytes = Encoding.ASCII.GetBytes(str);
+            var payload = new byte[11];
+            payload[0] = 0x02;
+            Array.Copy(bytes, 0, payload, 1, bytes.Length);
+            
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.TitleSet, payload));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> ClearTitle(ViscaDevice device)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Title, 0x00));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetTitle(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Title, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetMute(ViscaDevice device, ViscaBinaryStateToggle value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Mute, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetMute(ViscaDevice device, ViscaKeyLock value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.KeyLock, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetId(ViscaDevice device, short value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.IDWrite, PackExpandedShort(value)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAlarm(ViscaDevice device, ViscaBinaryState value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.Alarm, (byte)value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAlarmMode(ViscaDevice device, byte value)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AlarmSetMode, value));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetAlarmDayNightLevel(ViscaDevice device, short dayAeLevel, short nightAeLevel)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.Camera, ViscaCommandCameraOpcode.AlarmSetDayNightLevel, PackDoubleExpandedShort(dayAeLevel, nightAeLevel)));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> PanTilt(ViscaDevice device, byte panSpeed, byte tiltSpeed, ViscaMotionPan pan, ViscaMotionTilt tilt)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.Drive, panSpeed, tiltSpeed, (byte)pan, (byte)tilt));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> PanTiltAbsolute(ViscaDevice device, byte panSpeed, byte tiltSpeed, short pan, short tilt)
+        {
+            var payload = new []
+            {
+                panSpeed,
+                tiltSpeed,
+                (byte)(((pan & 0xF000) >> 12) & 0x0F),
+                (byte)(((pan & 0xF00) >> 8) & 0x0F),
+                (byte)(((pan & 0xF0) >> 4) & 0x0F),
+                (byte)(pan & 0xF),
+                (byte)(((tilt & 0xF000) >> 12) & 0x0F),
+                (byte)(((tilt & 0xF00) >> 8) & 0x0F),
+                (byte)(((tilt & 0xF0) >> 4) & 0x0F),
+                (byte)(tilt & 0xF)
+            };
+            
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.AbsolutePosition, payload));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> PanTiltRelative(ViscaDevice device, byte panSpeed, byte tiltSpeed, short pan, short tilt)
+        {
+            var payload = new []
+            {
+                panSpeed,
+                tiltSpeed,
+                (byte)(((pan & 0xF000) >> 12) & 0x0F),
+                (byte)(((pan & 0xF00) >> 8) & 0x0F),
+                (byte)(((pan & 0xF0) >> 4) & 0x0F),
+                (byte)(pan & 0xF),
+                (byte)(((tilt & 0xF000) >> 12) & 0x0F),
+                (byte)(((tilt & 0xF00) >> 8) & 0x0F),
+                (byte)(((tilt & 0xF0) >> 4) & 0x0F),
+                (byte)(tilt & 0xF)
+            };
+            
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.RelativePosition, payload));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> PanTiltHome(ViscaDevice device)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.Home));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> PanTiltReset(ViscaDevice device)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.Reset));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> SetPanTiltLimit(ViscaDevice device, ViscaPanTiltLimitCorner corner, short panLimit, short tiltLimit)
+        {
+            var payload = new byte[]
+            {
+                0x00,
+                (byte)corner,
+                (byte)(((panLimit & 0xF000) >> 12) & 0x0F),
+                (byte)(((panLimit & 0xF00) >> 8) & 0x0F),
+                (byte)(((panLimit & 0xF0) >> 4) & 0x0F),
+                (byte)(panLimit & 0xF),
+                (byte)(((tiltLimit & 0xF000) >> 12) & 0x0F),
+                (byte)(((tiltLimit & 0xF00) >> 8) & 0x0F),
+                (byte)(((tiltLimit & 0xF0) >> 4) & 0x0F),
+                (byte)(tiltLimit & 0xF)
+            };
+            
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.Limit, payload));
+            return await GetCommandAck();
+        }
+        
+        public async Task<ViscaAckStatus> ClearPanTiltLimit(ViscaDevice device, ViscaPanTiltLimitCorner corner)
+        {
+            Send(GetPacket(device, ViscaPacketType.Command, ViscaPacketCategory.PanTilter, ViscaCommandPanTilterOpcode.Limit, 0x01, (byte)corner, 0x07, 0x0F, 0x0F, 0x0F, 0x07, 0x0F, 0x0F, 0x0F));
             return await GetCommandAck();
         }
 
@@ -514,12 +951,12 @@ namespace VISCA.NET
             return GetEnum<ViscaBinaryState>(data);
         }
         
-        public async Task<ViscaPictureEffectMode> GetPictureEffectMode(ViscaDevice device)
+        public async Task<ViscaPictureEffect> GetPictureEffectMode(ViscaDevice device)
         {
             Send(GetPacket(device, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, ViscaInquiryCameraOpcode.PictureEffectMode));
             var data = await GetInquiryResponse(1);
 
-            return GetEnum<ViscaPictureEffectMode>(data);
+            return GetEnum<ViscaPictureEffect>(data);
         }
 
         public async Task<ViscaBinaryState> GetICRMode(ViscaDevice device)
@@ -570,12 +1007,12 @@ namespace VISCA.NET
             return GetEnum<ViscaBinaryState>(data);
         }
 
-        public async Task<ViscaBinaryState> GetKeyLockMode(ViscaDevice device)
+        public async Task<ViscaKeyLock> GetKeyLockMode(ViscaDevice device)
         {
             Send(GetPacket(device, ViscaPacketType.Inquiry, ViscaPacketCategory.Camera, ViscaInquiryCameraOpcode.KeyLock));
             var data = await GetInquiryResponse(1);
             
-            return GetEnum<ViscaBinaryState>(data);
+            return GetEnum<ViscaKeyLock>(data);
         }
 
         public async Task<short> GetID(ViscaDevice device)
@@ -654,33 +1091,5 @@ namespace VISCA.NET
         }
         
         #endregion
-    }
-
-    public enum ViscaCommandCameraOpcode
-    {
-        Power = 0x00,
-        AutoPowerOff = 0x40,
-        NightPowerOff = 0x41,
-        Zoom = 0x07,
-        ZoomDirect = 0x47
-    }
-
-    public enum ViscaZoomStandard
-    {
-        Stop = 0x00,
-        Tele = 0x02,
-        Wide = 0x03,
-    }
-
-    public enum ViscaZoomVariable
-    {
-        Tele = 0x20,
-        Wide = 0x30,
-    }
-
-    public enum ViscaBinaryState
-    {
-        On = 0x02,
-        Off = 0x03
     }
 }
