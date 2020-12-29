@@ -1,25 +1,26 @@
 ﻿namespace VISCA.NET
 {
-    public class ViscaDevice
-    {
-        public byte Address { get; }
-        
-        private readonly bool[] _sockets;
+	public class ViscaDevice
+	{
+		public byte Address { get; }
 
-        public ViscaDevice(byte address)
-        {
-            Address = address;
-            _sockets = new bool[2];
-        }
+		private readonly ViscaPacket[] _sockets;
 
-        public void SetSocket(int socketNumber)
-        {
-            _sockets[socketNumber] = true;
-        }
+		public ViscaDevice(byte address)
+		{
+			Address = address;
+			_sockets = new ViscaPacket[2];
+		}
 
-        public void ClearSocket(int socketNumber)
-        {
-            _sockets[socketNumber] = false;
-        }
-    }
+		public void SetSocket(int socketNumber, ViscaPacket packet)
+		{
+			_sockets[socketNumber] = packet;
+		}
+
+		public void ClearSocket(int socketNumber)
+		{
+			_sockets[socketNumber].ConsumeCompleted();
+			_sockets[socketNumber] = null;
+		}
+	}
 }
